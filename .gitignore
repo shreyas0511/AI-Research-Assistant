@@ -1,0 +1,9 @@
+*.txt
+*.vscode
+*__pycache__
+*__init__.py
+*.git
+*.env
+prototype_v2.ipynb
+rag.ipynb
+old.py

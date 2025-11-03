@@ -1,0 +1,86 @@
+<!-- Test Research Agent Live Streaming Frontend -->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Research Agent Stream</title>
+  <style>
+    body { font-family: monospace; background: #0d1117; color: #c9d1d9; padding: 20px; }
+    #log { white-space: pre-wrap; border: 1px solid #30363d; padding: 10px; border-radius: 8px; background: #161b22; }
+    input, button { padding: 6px 10px; margin-top: 8px; font-size: 1rem; }
+    .stage { color: #58a6ff; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h2>🔍 Research Agent Streaming Demo</h2>
+  <input id="query" type="text" placeholder="Enter query..." size="50" />
+  <button id="run">Run</button>
+
+  <h3>Live Output:</h3>
+  <div id="log"></div>
+
+  <script>
+    const log = document.getElementById("log");
+
+    document.getElementById("run").onclick = async () => {
+      const query = document.getElementById("query").value.trim();
+      if (!query) return alert("Enter a query first!");
+      log.innerHTML = "";
+
+      const response = await fetch("http://127.0.0.1:8000/query", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query }),
+      });
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let buffer = "";
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // Split by Server-Sent Event delimiter
+        const events = buffer.split("\n\n");
+        buffer = events.pop(); // keep last incomplete chunk
+
+        for (const event of events) {
+          if (!event.startsWith("data:")) continue;
+          const dataStr = event.replace("data:", "").trim();
+          if (!dataStr) continue;
+
+          try {
+            const obj = JSON.parse(dataStr);
+
+            // token-by-token updates
+            if (obj.stage && obj.stage.endsWith("_token")) {
+              log.innerText += obj.message; // append token
+            } 
+            // end of token stream for a node
+            else if (obj.stage && obj.stage.endsWith("_end")) {
+              log.innerHTML += `<br><span class="stage">--- ${obj.stage.replace("_end","")} complete ---</span><br>`;
+            } 
+            // normal stage events
+            else if (obj.stage) {
+              log.innerHTML += `<br><span class="stage">[${obj.stage}]</span> ${obj.message}<br>`;
+            }
+            // final state
+            else if (obj.final_state) {
+              log.innerHTML += `<br><br><span class="stage">✅ Finished</span><br>`;
+            }
+
+            // auto-scroll
+            window.scrollTo(0, document.body.scrollHeight);
+          } catch (e) {
+            console.warn("Parse error:", e, event);
+          }
+        }
+      }
+    };
+  </script>
+</body>
+</html>
